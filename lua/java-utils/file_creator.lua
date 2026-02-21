@@ -183,8 +183,14 @@ local function _create_file(options)
             java_dir = root .. '/src/main/java'
         else
             local dirs = vim.fn.glob(root .. '/*/src/main/java', true, true)
-            if #dirs > 0 then
-                java_dir = dirs[1]
+            
+            -- Filter out any errant `*` directories created by old bug
+            local valid_dirs = vim.tbl_filter(function(d)
+                return not d:match('/%*/src/main/java$')
+            end, dirs)
+            
+            if #valid_dirs > 0 then
+                java_dir = valid_dirs[1]
             else
                 java_dir = root .. '/src/main/java'
             end
@@ -259,11 +265,36 @@ local function create_file(opts)
         _create_file(opts)
         return
     end
+
+    local command_args = opts.args or {}
+    local arg_kind = command_args[1]
+    local arg_class_name = command_args[2]
     
-    prompt_for_kind(function(kind)
-        prompt_for_packages(function(package)
-            prompt_for_relationship(kind, function(relationship)
-                prompt_for_class_name(function(class_name)
+    local function get_kind(cb)
+        if arg_kind and arg_kind ~= '' then
+            return cb(arg_kind)
+        end
+        prompt_for_kind(cb)
+    end
+
+    local function get_class_name(cb)
+        if arg_class_name and arg_class_name ~= '' then
+            return cb(arg_class_name)
+        end
+        prompt_for_class_name(cb)
+    end
+    
+    local function get_relationship(kind, cb)
+        if arg_kind and arg_kind ~= '' then
+            return cb({}) -- specify standalone implicitly
+        end
+        prompt_for_relationship(kind, cb)
+    end
+
+    get_kind(function(kind)
+        get_class_name(function(class_name)
+            prompt_for_packages(function(package)
+                get_relationship(kind, function(relationship)
                     local options = vim.tbl_extend('force', {
                         kind = kind,
                         package = package,

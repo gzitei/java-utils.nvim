@@ -14,9 +14,28 @@ local function setup_java_utils()
 
   -- ── Commands ──────────────────────────────────────────────────────────────
 
-  vim.api.nvim_create_user_command('JavaNew', function()
-    java_utils.create_file()
-  end, { desc = 'Create new Java file' })
+  vim.api.nvim_create_user_command('JavaNew', function(opts)
+    local args = vim.split(opts.args, '%s+', { trimempty = true })
+    java_utils.create_file({ args = args })
+  end, { 
+    nargs = '*',
+    complete = function(ArgLead, CmdLine, CursorPos)
+        local parts = vim.split(CmdLine:sub(1, CursorPos), '%s+', { trimempty = false })
+        if #parts == 2 then
+            local cfg = require('java-utils.config').get()
+            local kinds = cfg.file_creator.file_types
+            local matches = {}
+            for _, k in ipairs(kinds) do
+                if vim.startswith(k, ArgLead) then
+                    table.insert(matches, k)
+                end
+            end
+            return matches
+        end
+        return {}
+    end,
+    desc = 'Create new Java file' 
+  })
 
   vim.api.nvim_create_user_command('JavaFindTest', function()
     java_utils.list_java_tests()
