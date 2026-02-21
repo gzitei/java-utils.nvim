@@ -1,0 +1,319 @@
+*java-utils.txt*    Java utilities for Neovim           *java-utils* *java-utils.nvim*
+
+Author:  gzitei
+License: MIT
+
+==============================================================================
+CONTENTS                                                  *java-utils-contents*
+
+  1. Introduction ................................ |java-utils-intro|
+  2. Requirements ................................ |java-utils-requirements|
+  3. Installation ................................ |java-utils-installation|
+  4. Configuration ............................... |java-utils-config|
+  5. Commands .................................... |java-utils-commands|
+  6. API ......................................... |java-utils-api|
+  7. Types ....................................... |java-utils-types|
+  8. Highlights .................................. |java-utils-highlights|
+  9. Troubleshooting ............................. |java-utils-troubleshooting|
+
+==============================================================================
+1. INTRODUCTION                                              *java-utils-intro*
+
+java-utils.nvim is a Neovim plugin for Java development.  It provides:
+
+  • Smart Java file creation with package detection and tab completion
+  • JUnit test discovery, running, and inline result display
+  • Optional debug integration via nvim-dap
+  • LSP integration with jdtls for test reference lookup
+
+==============================================================================
+2. REQUIREMENTS                                       *java-utils-requirements*
+
+  • Neovim >= 0.9.0
+  • rcarriga/nvim-notify  (notifications)
+  • Java Development Kit (JDK)
+  • `gradlew` or `mvnw` wrapper present in the project tree
+
+Optional (debug support):
+  • mfussenegger/nvim-dap
+  • A configured `dap.adapters['java']` entry
+
+Note: The "Debug" option is automatically hidden from all prompts if nvim-dap
+is not installed OR if `dap.adapters['java']` is not configured.
+
+==============================================================================
+3. INSTALLATION                                       *java-utils-installation*
+
+lazy.nvim ~
+>lua
+  {
+    'gzitei/java-utils.nvim',
+    ft = 'java',
+    dependencies = {
+      'rcarriga/nvim-notify',
+      -- optional:
+      'mfussenegger/nvim-dap',
+    },
+    opts = {},
+  }
+<
+
+packer.nvim ~
+>lua
+  use {
+    'gzitei/java-utils.nvim',
+    ft = 'java',
+    requires = { 'rcarriga/nvim-notify' },
+    config = function()
+      require('java-utils').setup()
+    end,
+  }
+<
+
+==============================================================================
+4. CONFIGURATION                                          *java-utils-config*
+
+Call `setup()` once with your options.  All keys are optional; unspecified
+keys fall back to the defaults shown below.
+
+>lua
+  require('java-utils').setup({
+    debug = false,
+
+    file_creator = {
+      default_package            = nil,   -- string | function()->string | nil
+      package_completion         = true,
+      use_current_file_package   = true,
+      file_types = { 'class', 'enum', 'interface', 'record' },
+    },
+
+    test_runner = {
+      auto_run_on_save   = false,
+      show_notifications = true,
+      test_patterns      = { '*Test.java', '*IT.java' },
+
+      symbols = {
+        passed  = ' ',
+        error   = ' ',
+        failed  = ' ',
+        skipped = ' ',
+      },
+
+      highlight_groups = {
+        TestPassed  = { fg = '#00FF00' },
+        TestFailed  = { fg = '#FF0000' },
+        TestSkipped = { fg = '#FFFF00' },
+      },
+    },
+  })
+<
+
+                                            *java-utils-config-default_package*
+`file_creator.default_package`
+  Type: `string | function()->string | nil`     Default: `nil`
+
+  When `nil`, the current file's package is used as the default.
+  When a string, that package is always pre-filled.
+  When a function, it is called each time and its return value is used.
+
+                                         *java-utils-config-package_completion*
+`file_creator.package_completion`
+  Type: `boolean`    Default: `true`
+
+  Enables `<Tab>` completion when entering a package name.
+
+                                   *java-utils-config-use_current_file_package*
+`file_creator.use_current_file_package`
+  Type: `boolean`    Default: `true`
+
+  Pre-fills the package prompt with the current file's package declaration.
+
+                                          *java-utils-config-auto_run_on_save*
+`test_runner.auto_run_on_save`
+  Type: `boolean`    Default: `false`
+
+  When true, saving a test file triggers a Run / Debug / Skip prompt.
+
+                                         *java-utils-config-show_notifications*
+`test_runner.show_notifications`
+  Type: `boolean`    Default: `true`
+
+  Show progress notifications via nvim-notify during test runs.
+
+                                            *java-utils-config-test_patterns*
+`test_runner.test_patterns`
+  Type: `string[]`    Default: `{ '*Test.java', '*IT.java' }`
+
+  Glob patterns used to identify test files for autocommands.
+
+==============================================================================
+5. COMMANDS                                              *java-utils-commands*
+
+                                                              *:JavaNew*
+`:JavaNew`
+  Create a new Java file interactively.  Steps:
+    1. Choose file type: class / interface / enum / record
+    2. Enter or confirm package name (Tab completion available)
+    3. Choose relationship: Standalone / Superclass / Interface
+    4. Enter the class name
+  The file is created and opened in the current window.
+
+                                                          *:JavaRunTest*
+`:JavaRunTest`
+  Run all tests in the current test class.  Prompts for Run / Debug / Skip.
+  The Debug option is only shown when nvim-dap is installed and
+  `dap.adapters['java']` is configured.
+
+                                                         *:JavaPickTest*
+`:JavaPickTest`
+  Select a specific `@Test` method from the current buffer and run it.
+  After method selection, prompts for Run / Debug / Skip.
+
+                                                        *:JavaFindTest*
+`:JavaFindTest`
+  Uses jdtls LSP references to find all test files that reference the current
+  class, then opens the results in the quickfix list.
+
+==============================================================================
+6. API                                                       *java-utils-api*
+
+All functions are available on the module returned by `require('java-utils')`.
+
+                                                     *java-utils.setup()*
+`setup({opts})`
+  Initialises the plugin.  See |java-utils-config| for option details.
+
+                                                 *java-utils.get_config()*
+`get_config()`
+  Returns the current configuration table.
+
+                                               *java-utils.create_file()*
+`create_file({opts})`
+  Creates a Java file.  When `opts` is `nil`, runs interactively.
+
+  Programmatic use: >lua
+    require('java-utils').create_file({
+      kind       = 'class',          -- 'class'|'interface'|'enum'|'record'
+      package    = 'com.example',
+      class_name = 'MyService',
+      extends    = 'com.example.Base',      -- optional
+      implements = 'com.example.IService',  -- optional
+    })
+<
+                                           *java-utils.get_test_methods()*
+`get_test_methods()`
+  Returns a list of `@Test` method names from the current buffer (Tree-sitter
+  powered).
+
+                                                 *java-utils.run_test()*
+`run_test({opts})`
+  Runs tests asynchronously.
+
+  Fields of `opts`:
+    • `bufnr`       `(integer)` buffer to run tests from
+    • `debug`       `(boolean)` run via dap when `true`
+    • `method_name` `(string?)` run only this method; `nil` runs whole class
+
+                                           *java-utils.list_java_tests()*
+`list_java_tests()`
+  Uses jdtls LSP references to find test files that reference the current
+  class and populates the quickfix list.
+
+------------------------------------------------------------------------------
+Lower-level functions (test_runner module):
+
+`require('java-utils.test_runner').prompt_run_mode(callback)`
+  Shows a Run / [Debug] / Skip picker.  Passes `'run'`, `'debug'`, or `nil`
+  to `callback`.  Debug is omitted when dap is unavailable or unconfigured.
+
+`require('java-utils.test_runner').prompt_test_method(methods, callback)`
+  Shows a picker over `methods`.  Passes the selected name to `callback`.
+
+`require('java-utils.test_runner').parse_xml_to_json(file_path)`
+  Parses a JUnit XML report file and returns a |java-utils-testsuite| table.
+
+`require('java-utils.test_runner').load_existing_report(bufnr)`
+  Reads the latest XML report for `bufnr` and annotates the buffer.
+
+==============================================================================
+7. TYPES                                                    *java-utils-types*
+
+                                                       *java-utils-testcase*
+>lua
+  ---@class testcase
+  ---@field classname string
+  ---@field name      string
+  ---@field time      string
+  ---@field status?   string   -- 'failure' | 'skipped' | nil (passed)
+  ---@field content?  string   -- failure message body
+  ---@field message?  string
+  ---@field type?     string
+  ---@field skipped?  boolean
+<
+
+                                                      *java-utils-testsuite*
+>lua
+  ---@class testsuite
+  ---@field errors    string
+  ---@field failures  string
+  ---@field tests     string
+  ---@field time      string
+  ---@field hostname? string
+  ---@field name?     string
+  ---@field skipped?  string
+  ---@field timestamp? string
+  ---@field testcases testcase[]
+<
+
+                                                  *java-utils-TestRunOptions*
+>lua
+  ---@class TestRunOptions
+  ---@field bufnr       integer
+  ---@field debug       boolean
+  ---@field method_name? string
+<
+
+==============================================================================
+8. HIGHLIGHTS                                          *java-utils-highlights*
+
+The following highlight groups are defined by the plugin and can be overridden
+in your colorscheme or after calling `setup()`:
+
+  *TestPassed*   Default: `{ fg = '#00FF00' }`
+  *TestFailed*   Default: `{ fg = '#FF0000' }`
+  *TestSkipped*  Default: `{ fg = '#FFFF00' }`
+
+Example override: >lua
+  vim.api.nvim_set_hl(0, 'TestPassed', { fg = '#00ff87', bold = true })
+<
+
+==============================================================================
+9. TROUBLESHOOTING                                *java-utils-troubleshooting*
+
+Package completion not working ~
+  Ensure a standard Maven/Gradle layout exists: >
+    project/
+    ├── src/main/java/com/example/
+    ├── src/test/java/com/example/
+    └── gradlew  (or mvnw)
+<
+Tests not discovered ~
+  • Test files must match `test_patterns` (default: `*Test.java`, `*IT.java`)
+  • Methods must carry a `@Test` annotation
+  • A build wrapper (`gradlew` / `mvnw`) must be present up the directory tree
+
+Debug option not shown ~
+  Both conditions must be true:
+    1. `nvim-dap` is installed and can be `require()`d
+    2. `require('dap').adapters['java']` is not `nil`
+
+Running tests ~
+  From the plugin directory: >
+    make test
+<
+  Or for a single spec: >
+    make test-file FILE=spec/java_utils_spec.lua
+<
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
