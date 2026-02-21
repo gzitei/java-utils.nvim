@@ -163,7 +163,34 @@ end
 local function _create_file(options)
     local root = get_root()
     local package_path = options.package:gsub('%.', '/')
-    local java_dir = vim.fn.expand(root .. '/*/src/main/java')
+    
+    local java_dir
+    local current_file = vim.api.nvim_buf_get_name(0)
+    if current_file and current_file ~= '' then
+        local src_dir = current_file:match('^(.*src/main/java)')
+        if src_dir then
+            java_dir = src_dir
+        else
+            local test_dir = current_file:match('^(.*src/test/java)')
+            if test_dir then
+                java_dir = test_dir:gsub('src/test/java$', 'src/main/java')
+            end
+        end
+    end
+
+    if not java_dir then
+        if vim.fn.isdirectory(root .. '/src/main/java') == 1 then
+            java_dir = root .. '/src/main/java'
+        else
+            local dirs = vim.fn.glob(root .. '/*/src/main/java', true, true)
+            if #dirs > 0 then
+                java_dir = dirs[1]
+            else
+                java_dir = root .. '/src/main/java'
+            end
+        end
+    end
+
     local dir_path = java_dir .. '/' .. package_path
 
     vim.fn.mkdir(dir_path, 'p')

@@ -111,57 +111,51 @@ describe("java-utils.file_creator", function()
 
   it("gets the current file package", function()
     local get_buf  = stub(vim.api, "nvim_get_current_buf").returns(1)
-    local get_lines = stub(vim.api, "nvim_buf_get_lines").returns({
-      "package com.example.test;", "", "public class TestClass { }",
-    })
+    local get_name = stub(vim.api, "nvim_buf_get_name").returns("/project/src/main/java/com/example/test/TestClass.java")
 
     local pkg = file_creator.get_current_file_package()
     assert.equals("com.example.test", pkg)
 
     get_buf:revert()
-    get_lines:revert()
+    get_name:revert()
   end)
 
   it("lists java packages as a table", function()
-    -- pcall(vim.fs.dir, path, opts) invokes the stub directly; the stub's
-    -- return value must be the iterator (not a factory wrapping the iterator).
-    local dirs = { "com/example", "com/test" }
-    local i = 0
-    stubs.fs_dir.returns(function()
-      i = i + 1
-      if i <= #dirs then return dirs[i], "directory" end
-    end)
-    stubs.expand.returns("/project/src/main/java")
+    local glob_stub = stub(vim.fn, "glob").returns({
+      "/project/src/main/java/com/example/Test1.java",
+      "/project/src/main/java/com/test/Test2.java"
+    })
 
     local packages = file_creator.list_java_packages()
     assert.is_table(packages)
+    
+    glob_stub:revert()
   end)
 
   it("provides package completion filtered by arg lead", function()
-    -- _package_completion calls the module-internal list_java_packages which
-    -- calls vim.fs.dir, so we stub that directly instead of monkey-patching M.
-    local dirs = { "com/example", "com/test", "org/example" }
-    local i = 0
-    stubs.fs_dir.returns(function()
-      i = i + 1
-      if i <= #dirs then return dirs[i], "directory" end
-    end)
-    stubs.expand.returns("/project/src/main/java")
+    local glob_stub = stub(vim.fn, "glob").returns({
+      "/project/src/main/java/com/example/Test1.java",
+      "/project/src/main/java/com/test/Test2.java",
+      "/project/src/main/java/org/example/Test3.java"
+    })
 
     local matches = file_creator._package_completion("com", "JavaNew com", 8)
-    -- All three dirs get converted to package names; only com.* ones match 'com' lead
     local com_count = 0
     for _, m in ipairs(matches) do
       if m:match("^com") then com_count = com_count + 1 end
     end
     assert.is_true(com_count >= 1)
+    
+    glob_stub:revert()
   end)
 
   it("creates a file when given direct options", function()
     -- get_root() calls vim.fs.find then vim.fs.dirname, make both return valid strings
     local fs_find_stub = stub(vim.fs, "find").returns({ "/test/project/.git" })
     local fs_dir_stub  = stub(vim.fs, "dirname").returns("/test/project")
-    stubs.expand.returns("/test/project/app/src/main/java")
+    stubs.buf_name = stub(vim.api, "nvim_buf_get_name").returns("")
+    stubs.isdirectory = stub(vim.fn, "isdirectory").returns(0)
+    stubs.glob = stub(vim.fn, "glob").returns({ "/test/project/app/src/main/java" })
 
     local mock_file = { write = stub.new(), close = stub.new() }
     stubs.io_open.returns(mock_file)
@@ -174,6 +168,9 @@ describe("java-utils.file_creator", function()
 
     fs_find_stub:revert()
     fs_dir_stub:revert()
+    stubs.buf_name:revert()
+    stubs.isdirectory:revert()
+    stubs.glob:revert()
   end)
 end)
 

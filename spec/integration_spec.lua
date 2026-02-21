@@ -151,29 +151,27 @@ describe("package completion", function()
   after_each(fresh_all)
 
   it("_package_completion filters by arg lead", function()
-    local orig = file_creator.list_java_packages
-    file_creator.list_java_packages = function()
-      return { "com.example", "com.test", "org.example" }
-    end
+    local glob_stub = require("luassert.stub")(vim.fn, "glob").returns({
+      "/project/src/main/java/com/example/Test1.java",
+      "/project/src/main/java/com/test/Test2.java",
+      "/project/src/main/java/org/example/Test3.java"
+    })
 
     local matches = file_creator._package_completion("com.", "JavaNew com.", 8)
     assert.same({ "com.example", "com.test" }, matches)
 
-    file_creator.list_java_packages = orig
+    glob_stub:revert()
   end)
 
   it("_package_completion returns all packages when lead is empty", function()
-    local orig = file_creator.list_java_packages
-    file_creator.list_java_packages = function()
-      return { "com.example", "org.example" }
-    end
+    local glob_stub = require("luassert.stub")(vim.fn, "glob").returns({
+      "/project/src/main/java/com/example/Test1.java",
+      "/project/src/main/java/org/example/Test2.java"
+    })
 
-    -- Empty ArgLead: pattern '^' matches everything
     local matches = file_creator._package_completion("", "JavaNew ", 8)
-    -- M.list_java_packages is monkey-patched, but _package_completion calls
-    -- the module-local list_java_packages — so just assert returns a table
     assert.is_table(matches)
 
-    file_creator.list_java_packages = orig
+    glob_stub:revert()
   end)
 end)
