@@ -22,21 +22,21 @@ end
 
 local function list_java_packages()
     local packages = {}
-    local java_root = vim.fn.expand(get_root() .. '**/src/main/java')
+    local seen = {}
+    local java_files = vim.fn.expand(get_root() .. '**/src/main/java/**/*.java', true, true)
     
-    -- Check if directory exists
-    local ok, result = pcall(vim.fs.dir, java_root, { depth = math.huge })
-    if not ok then return packages end
-    
-    for name, type in result do
-        if type == 'directory' then
-            local package_path = name:match('^(.+)$')
-            if package_path then
-                local package_name = package_path:gsub('/', '.')
+    for _, file in ipairs(java_files) do
+        local package_path = file:match('src/main/java/(.+)/[^/]+%.java$')
+        if package_path then
+            local package_name = package_path:gsub('/', '.')
+            if not seen[package_name] then
+                seen[package_name] = true
                 table.insert(packages, package_name)
             end
         end
     end
+    
+    table.sort(packages)
     return packages
 end
 
@@ -68,7 +68,6 @@ local function prompt_for_kind(callback)
 end
 
 local function prompt_for_packages(callback)
-    local packages = list_java_packages()
     local current_package = get_current_file_package()
     local cfg = config.get()
     
@@ -84,7 +83,7 @@ local function prompt_for_packages(callback)
     
     -- Use vim.fn.input with completion as the primary method
     local final_package
-    if cfg.file_creator.package_completion and #packages > 0 then
+    if cfg.file_creator.package_completion then
         -- Use vim.fn.input with custom completion
         final_package = vim.fn.input({
             prompt = 'Package name: ',
@@ -256,7 +255,7 @@ function M._package_completion(ArgLead, CmdLine, CursorPos)
     local matches = {}
     
     for _, package in ipairs(packages) do
-        if package:match('^' .. ArgLead) then
+        if package:sub(1, #ArgLead) == ArgLead then
             table.insert(matches, package)
         end
     end
