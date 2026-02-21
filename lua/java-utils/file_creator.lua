@@ -10,32 +10,14 @@ end
 local function get_current_file_package()
     local bufnr = vim.api.nvim_get_current_buf()
     local content = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    local content_str = table.concat(content, '\n')
-    
-    -- Parse package declaration using treesitter
-    local parser = vim.treesitter.get_string_parser(content_str, 'java')
-    if not parser then return nil end
-    
-    local tree = parser:parse()[1]
-    local root = tree:root()
-    
-    local query = vim.treesitter.query.parse('java', [[
-        (package_declaration
-            (scoped_identifier) @package_name)
-    ]])
-    
-    for _, match, _ in query:iter_matches(root, content_str) do
-        for id, node in pairs(match) do
-            local capture_name = query.captures[id]
-            if capture_name == 'package_name' then
-                local package_name = vim.treesitter.get_node_text(node, content_str)
-                parser:invalidate()
-                return package_name
-            end
+
+    for _, line in ipairs(content) do
+        local package_name = line:match('^%s*package%s+([%w%.]+)%s*;')
+        if package_name then
+            return package_name
         end
     end
-    
-    parser:invalidate()
+
     return nil
 end
 

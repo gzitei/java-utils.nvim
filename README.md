@@ -24,7 +24,7 @@ A Neovim plugin for Java development with intelligent file creation and test run
 
 ## Requirements
 
-- Neovim ≥ 0.9.0
+- Neovim ≥ 0.11
 - [nvim-notify](https://github.com/rcarriga/nvim-notify) (for notifications)
 - Java Development Kit (JDK)
 - Gradle (`gradlew`) or Maven (`mvnw`) build wrapper in the project root
