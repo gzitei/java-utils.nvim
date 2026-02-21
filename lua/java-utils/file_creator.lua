@@ -88,7 +88,7 @@ local function prompt_for_packages(callback)
         final_package = vim.fn.input({
             prompt = 'Package name: ',
             default = default_package or '',
-            completion = 'customlist,v:lua.require("java-utils.file_creator")._package_completion',
+            completion = 'customlist,v:lua._java_utils_package_completion',
         })
     else
         -- Fallback to simple input with default
@@ -120,7 +120,7 @@ local function prompt_for_relationship(kind, callback)
     local relation = vim.fn.input({
         prompt = 'Select Relationship (' .. relationship_str .. '): ',
         default = 'Standalone',
-        completion = 'customlist,v:lua.require("java-utils.file_creator")._relationship_completion',
+        completion = 'customlist,v:lua._java_utils_relationship_completion',
     })
     
     if not relation or relation == '' then
@@ -138,7 +138,7 @@ local function prompt_for_relationship(kind, callback)
     -- Use vim.fn.input with completion for base type selection
     local base_type = vim.fn.input({
         prompt = prompt_text,
-        completion = 'customlist,v:lua.require("java-utils.file_creator")._base_type_completion',
+        completion = 'customlist,v:lua._java_utils_base_type_completion',
     })
     
     if base_type and base_type ~= '' then
@@ -293,5 +293,9 @@ M.create_file = create_file
 M._create_file = _create_file
 M.get_current_file_package = get_current_file_package
 M.list_java_packages = list_java_packages
+
+_G._java_utils_package_completion = M._package_completion
+_G._java_utils_relationship_completion = M._relationship_completion
+_G._java_utils_base_type_completion = M._base_type_completion
 
 return M
