@@ -23,7 +23,7 @@ end
 local function list_java_packages()
     local packages = {}
     local seen = {}
-    local java_files = vim.fn.expand(get_root() .. '**/src/main/java/**/*.java', true, true)
+    local java_files = vim.fn.glob(get_root() .. '/**/src/main/java/**/*.java', true, true)
     
     for _, file in ipairs(java_files) do
         local package_path = file:match('src/main/java/(.+)/[^/]+%.java$')
@@ -42,7 +42,7 @@ end
 
 local function list_java_files()
     local java_files =
-        vim.fn.expand(get_root() .. '**/src/main/java/**/*.java', true, true)
+        vim.fn.glob(get_root() .. '/**/src/main/java/**/*.java', true, true)
     return vim.tbl_map(function(file)
         local package_path = file:match('src/main/java/(.+)%.java$')
         if package_path then
