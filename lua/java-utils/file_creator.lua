@@ -8,14 +8,13 @@ local function get_root()
 end
 
 local function get_current_file_package()
-    local bufnr = vim.api.nvim_get_current_buf()
-    local content = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local file_path = vim.api.nvim_buf_get_name(0)
+    if not file_path or file_path == '' then return nil end
 
-    for _, line in ipairs(content) do
-        local package_name = line:match('^%s*package%s+([%w%.]+)%s*;')
-        if package_name then
-            return package_name
-        end
+    -- Derive package from path: .../src/main/java/com/example/pkg/File.java
+    local pkg_path = file_path:match('src/main/java/(.+)/[^/]+%.java$')
+    if pkg_path then
+        return pkg_path:gsub('/', '.')
     end
 
     return nil
