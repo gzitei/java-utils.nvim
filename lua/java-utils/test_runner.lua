@@ -708,9 +708,13 @@ local function is_test_environment_ready(output)
         or low:match('no tests were executed') ~= nil
 end
 
+---@param method_name string|nil
 ---@return fun(config: table): table
-local function create_dap_before_hook()
+local function create_dap_before_hook(method_name)
     return function(config)
+        if not config then
+            return {}
+        end
         local final = vim.deepcopy(config)
         final.steppingGranularity = 'statement'
         final.exceptionBreakpoints = { 'uncaught', 'caught' }
@@ -720,10 +724,9 @@ local function create_dap_before_hook()
         })
         local project_name = vim.fs.basename(root)
         local test_class = vim.fn.expand('%:t:r')
-        local method_name = nil
         final.mainClass = project_name .. '.' .. test_class
         final.projectName = project_name
-        final.args = method_name and { '--tests', method_name } or {}
+        final.args = method_name and { '--tests', method_name } or (config.args or {})
         final.classPaths = final.classPaths or {}
         final.modulePaths = final.modulePaths or {}
         final.request = 'launch'
@@ -813,9 +816,8 @@ M.run_test = function(options)
             mainClass = project_name .. '.' .. test_class,
             projectName = project_name,
             args = method_name and { '--tests', method_name } or {},
-            before = create_dap_before_hook(),
         }
-        dap.run(dap_config)
+        dap.run(dap_config, { before = create_dap_before_hook(method_name) })
         return
     end
 
