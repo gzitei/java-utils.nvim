@@ -25,6 +25,15 @@ local hl_by_status = {
     skipped = 'TestSkipped',
 }
 
+local TEST_RESULTS_NAMESPACE = 'java_test_results'
+local test_results_ns_id = vim.api.nvim_create_namespace(TEST_RESULTS_NAMESPACE)
+
+---@param bufnr integer
+local function clear_test_result_markers(bufnr)
+    vim.api.nvim_buf_clear_namespace(bufnr, test_results_ns_id, 0, -1)
+    vim.diagnostic.reset(test_results_ns_id, bufnr)
+end
+
 ---@param text string|string[]
 local function show_long_text_in_floating_window(text)
     local current_win = vim.api.nvim_get_current_win()
@@ -519,6 +528,8 @@ end
 ---@param ns integer
 local function process_report_json(data, nodes, bufnr, ns)
     vim.schedule(function()
+        clear_test_result_markers(bufnr)
+
         if not nodes.class_declaration then
             return
         end
@@ -760,12 +771,18 @@ M.run_test = function(options)
     local method_name = options.method_name
 
     local notification_id = notification('Preparing test run...')
+    local function update_notification(msg, end_state)
+        local next_id = notification(msg, notification_id, end_state)
+        if next_id ~= nil then
+            notification_id = next_id
+        end
+    end
     local output_buffer = ''
 
     local buf_name = vim.api.nvim_buf_get_name(bufnr)
     local wrapper = get_wrapper(bufnr)
     if not wrapper then
-        notification('No build wrapper found', notification_id, true)
+        update_notification('No build wrapper found', true)
         close_notification(notification_id)
         return
     end
@@ -803,7 +820,13 @@ M.run_test = function(options)
     end
 
     local function on_exit(_, code)
-        notification('Test run completed', notification_id, true)
+        if code ~= 0 then
+            update_notification('Test run produced errors', true)
+        else
+            update_notification('Test run completed', true)
+        end
+
+        clear_test_result_markers(bufnr)
 
         if vim.trim(output_buffer) ~= '' then
             pcall(show_long_text_in_floating_window, output_buffer)
@@ -812,9 +835,7 @@ M.run_test = function(options)
         local report = find_latest_report()
         if report then
             local nodes = parse_document()
-            local ns = vim.api.nvim_create_namespace('java_test_results')
-            vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
-            parse_report_xml(report, nodes, bufnr, ns)
+            parse_report_xml(report, nodes, bufnr, test_results_ns_id)
         end
         close_notification(notification_id)
     end
@@ -833,7 +854,7 @@ M.run_test = function(options)
             and dap.configurations.java[1] ~= nil
 
         if not has_java_adapter or not has_java_configuration then
-            notification('Debug unavailable: Java DAP not configured', notification_id, true)
+            update_notification('Debug unavailable: Java DAP not configured', true)
             close_notification(notification_id)
             return
         end
@@ -852,19 +873,19 @@ M.run_test = function(options)
             if debug then
                 if not dap_attach_started and dap and dap.configurations and dap.configurations.java then
                     dap_attach_started = true
-                    notification('Starting debug session...', notification_id)
+                    update_notification('Starting debug session...')
                     vim.schedule(function()
                         local ok = pcall(dap.run, dap.configurations.java[1], {
                             before = create_dap_before_hook(method_name),
                         })
                         if not ok then
-                            notification('Failed to start debug session', notification_id, true)
+                            update_notification('Failed to start debug session', true)
                             close_notification(notification_id)
                         end
                     end)
                 end
             else
-                notification('Running tests...', notification_id)
+                update_notification('Running tests...')
             end
         end
     end
@@ -878,19 +899,9 @@ M.run_test = function(options)
                 output_buffer = output_buffer .. '\n' .. output
             end
         end
-
-        notification('Test run produced errors', notification_id, true)
-        close_notification(notification_id)
-        local report = find_latest_report()
-        if report then
-            local nodes = parse_document()
-            local ns = vim.api.nvim_create_namespace('java_test_results')
-            vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
-            parse_report_xml(report, nodes, bufnr, ns)
-        end
     end
 
-    notification('Starting test run...', notification_id)
+    update_notification('Starting test run...')
     local job_id = vim.fn.jobstart(cmd, {
         stdout_buffered = true,
         stderr_buffered = true,
@@ -901,7 +912,7 @@ M.run_test = function(options)
     })
 
     if job_id <= 0 then
-        notification('Failed to start test run', notification_id, true)
+        update_notification('Failed to start test run', true)
         close_notification(notification_id)
     end
 end
@@ -936,6 +947,9 @@ M.load_existing_report = function(bufnr)
         false,
         true
     )
+
+    clear_test_result_markers(bufnr)
+
     if #reports == 0 then
         return
     end
@@ -958,9 +972,7 @@ M.load_existing_report = function(bufnr)
 
     if latest_report then
         local nodes = parse_document()
-        local ns = vim.api.nvim_create_namespace('java_test_results')
-        vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
-        parse_report_xml(latest_report, nodes, bufnr, ns)
+        parse_report_xml(latest_report, nodes, bufnr, test_results_ns_id)
     end
 end
 

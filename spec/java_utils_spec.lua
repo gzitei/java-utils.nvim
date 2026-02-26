@@ -466,6 +466,82 @@ describe("java-utils.test_runner", function()
     assert.is_true(dismiss_called > 0)
   end)
 
+  it("run_test only shows error notification when exit code is non-zero", function()
+    package.loaded["java-utils.test_runner"] = nil
+    local _, tr = fresh_test_runner()
+
+    stubs.buf_name.returns("/project/src/test/java/com/example/MyServiceIT.java")
+    stubs.fs_dirname.returns("/project/src/test/java/com/example")
+    stubs.fs_find.invokes(function(names, _opts)
+      if names[1] == "gradlew" then
+        return { "/project/gradlew" }
+      end
+      if names[1] == "pom.xml" then
+        return { "/project/pom.xml" }
+      end
+      return {}
+    end)
+    stubs.glob.returns({})
+
+    local messages = {}
+    package.loaded["notify"] = {
+      notify = function(msg)
+        table.insert(messages, msg)
+        return {}
+      end,
+      dismiss = function() end,
+    }
+
+    stubs.jobstart.invokes(function(_cmd, opts)
+      opts.on_stderr(nil, { "warning output" })
+      opts.on_exit(nil, 0)
+      return 42
+    end)
+
+    tr.run_test({ bufnr = 1, debug = false, method_name = nil })
+
+    local all = table.concat(messages, "\n")
+    assert.is_true(all:match("Test run completed") ~= nil)
+    assert.is_true(all:match("Test run produced errors") == nil)
+  end)
+
+  it("run_test shows error notification when exit code is non-zero", function()
+    package.loaded["java-utils.test_runner"] = nil
+    local _, tr = fresh_test_runner()
+
+    stubs.buf_name.returns("/project/src/test/java/com/example/MyServiceIT.java")
+    stubs.fs_dirname.returns("/project/src/test/java/com/example")
+    stubs.fs_find.invokes(function(names, _opts)
+      if names[1] == "gradlew" then
+        return { "/project/gradlew" }
+      end
+      if names[1] == "pom.xml" then
+        return { "/project/pom.xml" }
+      end
+      return {}
+    end)
+    stubs.glob.returns({})
+
+    local messages = {}
+    package.loaded["notify"] = {
+      notify = function(msg)
+        table.insert(messages, msg)
+        return {}
+      end,
+      dismiss = function() end,
+    }
+
+    stubs.jobstart.invokes(function(_cmd, opts)
+      opts.on_exit(nil, 1)
+      return 42
+    end)
+
+    tr.run_test({ bufnr = 1, debug = false, method_name = nil })
+
+    local all = table.concat(messages, "\n")
+    assert.is_true(all:match("Test run produced errors") ~= nil)
+  end)
+
   it("load_existing_report loads matching IT report by basename", function()
     package.loaded["java-utils.test_runner"] = nil
     local _, tr = fresh_test_runner()

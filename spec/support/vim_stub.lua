@@ -170,6 +170,7 @@ vim_stub.keymap = {
 vim_stub.diagnostic = {
   get       = function() return {} end,
   set       = function() end,
+  reset     = function() end,
   severity  = { ERROR = 1, WARN = 2, INFO = 3, HINT = 4 },
 }
 
