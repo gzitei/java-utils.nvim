@@ -197,6 +197,7 @@ describe("java-utils.test_runner", function()
     end
     package.loaded["java-utils.config"]      = nil
     package.loaded["java-utils.test_runner"] = nil
+    package.loaded["notify"] = nil
   end)
 
   it("returns a table from get_test_methods", function()
@@ -354,5 +355,156 @@ describe("java-utils.test_runner", function()
     assert.is_nil(result)
 
     ui_stub:revert()
+  end)
+
+  it("run_test dismisses notification when jobstart fails", function()
+    package.loaded["java-utils.test_runner"] = nil
+    local _, tr = fresh_test_runner()
+
+    stubs.buf_name.returns("/project/src/test/java/com/example/MyServiceIT.java")
+    stubs.fs_dirname.returns("/project/src/test/java/com/example")
+    stubs.fs_find.invokes(function(names, _opts)
+      if names[1] == "gradlew" then
+        return { "/project/gradlew" }
+      end
+      if names[1] == "pom.xml" then
+        return { "/project/pom.xml" }
+      end
+      return {}
+    end)
+    stubs.jobstart.returns(0)
+
+    local dismiss_called = 0
+    package.loaded["notify"] = {
+      notify = function() return {} end,
+      dismiss = function() dismiss_called = dismiss_called + 1 end,
+    }
+
+    tr.run_test({ bufnr = 1, debug = false, method_name = nil })
+
+    assert.is_true(dismiss_called > 0)
+  end)
+
+  it("run_test opens floating output window and starts 5s autoclose timer", function()
+    package.loaded["java-utils.test_runner"] = nil
+    local _, tr = fresh_test_runner()
+
+    stubs.buf_name.returns("/project/src/test/java/com/example/MyServiceIT.java")
+    stubs.fs_dirname.returns("/project/src/test/java/com/example")
+    stubs.fs_find.invokes(function(names, _opts)
+      if names[1] == "gradlew" then
+        return { "/project/gradlew" }
+      end
+      if names[1] == "pom.xml" then
+        return { "/project/pom.xml" }
+      end
+      return {}
+    end)
+    stubs.glob.returns({})
+
+    local open_win_stub = stub(vim.api, "nvim_open_win").returns(1)
+
+    local original_new_timer = vim.loop.new_timer
+    local timer_started_timeout
+    vim.loop.new_timer = function()
+      return {
+        start = function(_, timeout, _repeat, _cb)
+          timer_started_timeout = timeout
+        end,
+        is_closing = function() return false end,
+        stop = function() end,
+        close = function() end,
+      }
+    end
+
+    stubs.jobstart.invokes(function(_cmd, opts)
+      opts.on_stdout(nil, { "stdout line" })
+      opts.on_stderr(nil, { "stderr line" })
+      opts.on_exit(nil, 0)
+      return 42
+    end)
+
+    tr.run_test({ bufnr = 1, debug = false, method_name = nil })
+
+    assert.stub(open_win_stub).was_called()
+    assert.equals(5000, timer_started_timeout)
+
+    vim.loop.new_timer = original_new_timer
+    open_win_stub:revert()
+  end)
+
+  it("run_test debug path dismisses notification when java dap is unavailable", function()
+    package.loaded["java-utils.test_runner"] = nil
+    local _, tr = fresh_test_runner()
+
+    stubs.buf_name.returns("/project/src/test/java/com/example/MyServiceIT.java")
+    stubs.fs_dirname.returns("/project/src/test/java/com/example")
+    stubs.fs_find.invokes(function(names, _opts)
+      if names[1] == "gradlew" then
+        return { "/project/gradlew" }
+      end
+      if names[1] == "pom.xml" then
+        return { "/project/pom.xml" }
+      end
+      return {}
+    end)
+
+    local dap = require("dap")
+    dap.adapters = dap.adapters or {}
+    dap.configurations = dap.configurations or {}
+    dap.adapters.java = nil
+    dap.configurations.java = nil
+
+    local dismiss_called = 0
+    package.loaded["notify"] = {
+      notify = function() return {} end,
+      dismiss = function() dismiss_called = dismiss_called + 1 end,
+    }
+
+    tr.run_test({ bufnr = 1, debug = true, method_name = nil })
+
+    assert.is_true(dismiss_called > 0)
+  end)
+
+  it("load_existing_report loads matching IT report by basename", function()
+    package.loaded["java-utils.test_runner"] = nil
+    local _, tr = fresh_test_runner()
+
+    stubs.buf_name.returns("/project/src/test/java/com/example/MyServiceIT.java")
+    stubs.fs_dirname.returns("/project/src/test/java/com/example")
+    stubs.fs_find.invokes(function(names, _opts)
+      if names[1] == "gradlew" then
+        return { "/project/gradlew" }
+      end
+      if names[1] == "pom.xml" then
+        return { "/project/pom.xml" }
+      end
+      return {}
+    end)
+    stubs.glob.returns({
+      "/project/build/test-results/test/TEST-com.example.OtherIT.xml",
+      "/project/build/test-results/test/TEST-com.example.MyServiceIT.xml",
+    })
+    stubs.fnamemod.invokes(function(path, modifier)
+      if modifier == ":t:r" then
+        local tail = path:match("([^/]+)$") or path
+        return tail:gsub("%.[^.]+$", "")
+      end
+      return path
+    end)
+    stubs.getftime.invokes(function(path)
+      if path:match("MyServiceIT") then
+        return 200
+      end
+      return 100
+    end)
+
+    local clear_ns_stub = stub(vim.api, "nvim_buf_clear_namespace")
+
+    tr.load_existing_report(1)
+
+    assert.stub(clear_ns_stub).was_called()
+
+    clear_ns_stub:revert()
   end)
 end)

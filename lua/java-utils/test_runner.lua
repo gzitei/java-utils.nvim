@@ -375,7 +375,7 @@ local function notification(msg, id, end_state)
             return not end_state
         end,
         title = 'Java Test',
-        animate = false,
+        animate = true,
     }
     if end_state then
         opts.timeout = 2000
@@ -384,6 +384,20 @@ local function notification(msg, id, end_state)
         opts.replace = id
     end
     return require('notify').notify(msg .. ' ', 'info', opts)
+end
+
+---@param id notify.Record|nil
+local function close_notification(id)
+    if id == nil then
+        return
+    end
+
+    vim.schedule(function()
+        local ok, notify = pcall(require, 'notify')
+        if ok and notify and type(notify.dismiss) == 'function' then
+            pcall(notify.dismiss, id)
+        end
+    end)
 end
 
 ---@param case testcase
@@ -544,15 +558,17 @@ end
 
 ---@param callback fun(mode: 'run'|'debug'|nil)
 M.prompt_run_mode = function(callback)
-    -- Only offer Debug when nvim-dap is installed AND a Java adapter is configured.
+    local choices = { 'Run', 'Skip' }
+
     local dap_ok, dap = pcall(require, 'dap')
-    local java_adapter_ready = dap_ok
-        and dap.adapters ~= nil
+    local has_java_adapter = dap_ok
+        and dap
+        and dap.adapters
         and dap.adapters['java'] ~= nil
 
-    local choices = java_adapter_ready
-        and { 'Run', 'Debug', 'Skip' }
-        or  { 'Run', 'Skip' }
+    if has_java_adapter then
+        choices = { 'Run', 'Debug', 'Skip' }
+    end
 
     vim.ui.select(choices, {
         prompt = 'Select test mode:',
@@ -744,11 +760,13 @@ M.run_test = function(options)
     local method_name = options.method_name
 
     local notification_id = notification('Preparing test run...')
+    local output_buffer = ''
 
     local buf_name = vim.api.nvim_buf_get_name(bufnr)
     local wrapper = get_wrapper(bufnr)
     if not wrapper then
         notification('No build wrapper found', notification_id, true)
+        close_notification(notification_id)
         return
     end
 
@@ -786,6 +804,83 @@ M.run_test = function(options)
 
     local function on_exit(_, code)
         notification('Test run completed', notification_id, true)
+
+        if vim.trim(output_buffer) ~= '' then
+            pcall(show_long_text_in_floating_window, output_buffer)
+        end
+
+        local report = find_latest_report()
+        if report then
+            local nodes = parse_document()
+            local ns = vim.api.nvim_create_namespace('java_test_results')
+            vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
+            parse_report_xml(report, nodes, bufnr, ns)
+        end
+        close_notification(notification_id)
+    end
+
+    local dap = nil
+    local dap_attach_started = false
+
+    if debug then
+        local dap_ok
+        dap_ok, dap = pcall(require, 'dap')
+        local has_java_adapter = dap_ok and dap and dap.adapters and dap.adapters['java'] ~= nil
+        local has_java_configuration = dap_ok
+            and dap
+            and dap.configurations
+            and dap.configurations.java
+            and dap.configurations.java[1] ~= nil
+
+        if not has_java_adapter or not has_java_configuration then
+            notification('Debug unavailable: Java DAP not configured', notification_id, true)
+            close_notification(notification_id)
+            return
+        end
+    end
+
+    local function on_stdout(_, data)
+        local output = table.concat(data or {}, '\n')
+        if output ~= '' then
+            if output_buffer == '' then
+                output_buffer = output
+            else
+                output_buffer = output_buffer .. '\n' .. output
+            end
+        end
+        if is_test_environment_ready(output) then
+            if debug then
+                if not dap_attach_started and dap and dap.configurations and dap.configurations.java then
+                    dap_attach_started = true
+                    notification('Starting debug session...', notification_id)
+                    vim.schedule(function()
+                        local ok = pcall(dap.run, dap.configurations.java[1], {
+                            before = create_dap_before_hook(method_name),
+                        })
+                        if not ok then
+                            notification('Failed to start debug session', notification_id, true)
+                            close_notification(notification_id)
+                        end
+                    end)
+                end
+            else
+                notification('Running tests...', notification_id)
+            end
+        end
+    end
+
+    local function on_stderr(_, data)
+        local output = table.concat(data or {}, '\n')
+        if output ~= '' then
+            if output_buffer == '' then
+                output_buffer = output
+            else
+                output_buffer = output_buffer .. '\n' .. output
+            end
+        end
+
+        notification('Test run produced errors', notification_id, true)
+        close_notification(notification_id)
         local report = find_latest_report()
         if report then
             local nodes = parse_document()
@@ -795,55 +890,42 @@ M.run_test = function(options)
         end
     end
 
-    local function on_stdout(_, data)
-        local output = table.concat(data, '\n')
-        if is_test_environment_ready(output) then
-            notification('Running tests...', notification_id)
-        end
-    end
-
-    if debug then
-        local dap_ok, dap = pcall(require, 'dap')
-        if not dap_ok then
-            notification('nvim-dap is not installed — cannot debug', notification_id, true)
-            return
-        end
-        notification('Starting debug session...', notification_id)
-        local dap_config = {
-            type = 'java',
-            request = 'launch',
-            name = 'Debug Java Test',
-            mainClass = project_name .. '.' .. test_class,
-            projectName = project_name,
-            args = method_name and { '--tests', method_name } or {},
-        }
-        dap.run(dap_config, { before = create_dap_before_hook(method_name) })
-        return
-    end
-
     notification('Starting test run...', notification_id)
-    vim.fn.jobstart(cmd, {
+    local job_id = vim.fn.jobstart(cmd, {
         stdout_buffered = true,
         stderr_buffered = true,
         on_stdout = on_stdout,
-        on_stderr = on_stdout,
+        on_stderr = on_stderr,
         on_exit = on_exit,
         cwd = build_dir,
     })
+
+    if job_id <= 0 then
+        notification('Failed to start test run', notification_id, true)
+        close_notification(notification_id)
+    end
 end
 
 ---@param bufnr integer
 M.load_existing_report = function(bufnr)
-    local cfg = config.get()
-    if not cfg.test_runner.auto_run_on_save then
+    local buf_name = vim.api.nvim_buf_get_name(bufnr)
+    if not buf_name or buf_name == '' then
         return
     end
-    
-    local buf_name = vim.api.nvim_buf_get_name(bufnr)
+
+    local wrapper = get_wrapper(bufnr)
+    if not wrapper then
+        return
+    end
+
     local build_dir = get_build(bufnr)
+    if not build_dir then
+        return
+    end
+
     local test_results_dir
-    
-    if vim.fs.basename(get_wrapper(bufnr)) == 'gradlew' then
+
+    if vim.fs.basename(wrapper) == 'gradlew' then
         test_results_dir = vim.fs.joinpath(build_dir, 'build', 'test-results', 'test')
     else
         test_results_dir = vim.fs.joinpath(build_dir, 'target', 'surefire-reports')
@@ -858,15 +940,23 @@ M.load_existing_report = function(bufnr)
         return
     end
 
-    table.sort(reports, function(a, b)
-        return vim.fn.getftime(a) > vim.fn.getftime(b)
-    end)
-
-    local latest_report = reports[1]
     local test_class = vim.fn.fnamemodify(buf_name, ':t:r')
-    local report_class = vim.fn.fnamemodify(latest_report, ':t:r'):sub(6) -- Remove 'TEST-' prefix
+    local latest_report = nil
+    local latest_time = -1
 
-    if test_class == report_class then
+    for _, report in ipairs(reports) do
+        local report_class = vim.fn.fnamemodify(report, ':t:r'):sub(6) -- Remove 'TEST-' prefix
+        local report_simple_class = report_class:match('([^.]+)$') or report_class
+        if report_simple_class == test_class or report_class == test_class then
+            local report_time = vim.fn.getftime(report)
+            if report_time > latest_time then
+                latest_time = report_time
+                latest_report = report
+            end
+        end
+    end
+
+    if latest_report then
         local nodes = parse_document()
         local ns = vim.api.nvim_create_namespace('java_test_results')
         vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)

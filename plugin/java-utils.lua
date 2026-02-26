@@ -55,13 +55,27 @@ local function setup_java_utils()
     end)
   end, { desc = 'Run current Java test class (prompts Run / Debug)' })
 
-  vim.api.nvim_create_user_command('JavaPickTest', function()
+  vim.api.nvim_create_user_command('JavaPickTest', function(opts)
     local test_runner = require('java-utils.test_runner')
     local bufnr    = vim.api.nvim_get_current_buf()
     local methods  = java_utils.get_test_methods()
+    local method_arg = vim.trim(opts.args or '')
 
     if #methods == 0 then
       vim.notify('No @Test methods found in current buffer', vim.log.levels.WARN)
+      return
+    end
+
+    if method_arg ~= '' then
+      test_runner.prompt_run_mode(function(mode)
+        if mode then
+          test_runner.run_test({
+            bufnr  = bufnr,
+            debug  = mode == 'debug',
+            method_name = method_arg,
+          })
+        end
+      end)
       return
     end
 
@@ -78,7 +92,20 @@ local function setup_java_utils()
         end)
       end
     end)
-  end, { desc = 'Pick and run a specific Java test method (prompts Run / Debug)' })
+  end, {
+    nargs = '?',
+    complete = function(ArgLead)
+      local matches = {}
+      local methods = java_utils.get_test_methods()
+      for _, method in ipairs(methods) do
+        if ArgLead == '' or vim.startswith(method, ArgLead) then
+          table.insert(matches, method)
+        end
+      end
+      return matches
+    end,
+    desc = 'Pick and run a specific Java test method (prompts Run / Debug)'
+  })
 
   -- ── Highlights ────────────────────────────────────────────────────────────
 

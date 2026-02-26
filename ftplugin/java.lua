@@ -29,10 +29,21 @@ end, {
   desc = 'Run Java test class',
 })
 
-vim.api.nvim_buf_create_user_command(0, 'JavaPickTest', function()
+vim.api.nvim_buf_create_user_command(0, 'JavaPickTest', function(opts)
   local methods = java_utils.get_test_methods()
+  local method_arg = vim.trim(opts.args or '')
+
   if #methods == 0 then
     vim.notify('No @Test methods found in current buffer', vim.log.levels.WARN)
+    return
+  end
+
+  if method_arg ~= '' then
+    java_utils.run_test({
+      bufnr = vim.api.nvim_get_current_buf(),
+      debug = false,
+      method_name = method_arg,
+    })
     return
   end
   
@@ -48,6 +59,17 @@ vim.api.nvim_buf_create_user_command(0, 'JavaPickTest', function()
     end
   end)
 end, {
+  nargs = '?',
+  complete = function(ArgLead)
+    local matches = {}
+    local methods = java_utils.get_test_methods()
+    for _, method in ipairs(methods) do
+      if ArgLead == '' or vim.startswith(method, ArgLead) then
+        table.insert(matches, method)
+      end
+    end
+    return matches
+  end,
   desc = 'Pick and run a specific Java test method',
 })
 

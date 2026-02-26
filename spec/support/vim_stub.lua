@@ -16,6 +16,7 @@ end
 package.preload["notify"] = function()
   return {
     notify = function(_msg, _level, _opts) return {} end,
+    dismiss = function(_id) end,
   }
 end
 
@@ -134,6 +135,11 @@ vim_stub.schedule = function(fn) fn() end
 vim_stub.inspect = function(v)
   if type(v) == "table" then return "{table}" end
   return tostring(v)
+end
+
+vim_stub.startswith = function(s, prefix)
+  if type(s) ~= "string" or type(prefix) ~= "string" then return false end
+  return s:sub(1, #prefix) == prefix
 end
 
 -- ── vim.cmd ───────────────────────────────────────────────────────────────────
