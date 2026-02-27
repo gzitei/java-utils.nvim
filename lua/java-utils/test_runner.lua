@@ -376,7 +376,7 @@ local function notification(msg, id, end_state)
     if not cfg.test_runner.show_notifications then
         return nil
     end
-    
+
     local opts = {
         render = 'compact',
         icon = ' 󰙨',
@@ -723,43 +723,43 @@ end
 ---@param output string
 ---@return boolean
 local function is_test_environment_ready(output)
-    local up  = output:upper()
+    local up = output:upper()
     local low = output:lower()
-    return up:match('T E S T S') ~= nil           -- Gradle & Maven Surefire banner
-        or low:match('listening') ~= nil           -- debug: waiting for DAP (both)
+    return up:match('T E S T S') ~= nil -- Gradle & Maven Surefire banner
+        or low:match('listening') ~= nil -- debug: waiting for DAP (both)
         -- Gradle-specific
         or low:match('0 tests completed') ~= nil
         -- Maven Surefire-specific
-        or output:match('Running ') ~= nil         -- "Running com.example.TestClass"
-        or low:match('tests run:') ~= nil          -- per-class summary line
+        or output:match('Running ') ~= nil -- "Running com.example.TestClass"
+        or low:match('tests run:') ~= nil -- per-class summary line
         or low:match('no tests were executed') ~= nil
 end
 
+---@param output string
+---@return boolean
+local function is_debugger_listening(output)
+    local low = output:lower()
+    return low:match('listening for transport dt_socket') ~= nil
+        or low:match('dt_socket at address') ~= nil
+end
+
 ---@param method_name string|nil
+---@param project_name string
 ---@return fun(config: table): table
-local function create_dap_before_hook(method_name)
+local function create_dap_before_hook(method_name, project_name)
     return function(config)
         if not config then
             return {}
         end
         local final = vim.deepcopy(config)
-        final.steppingGranularity = 'statement'
-        final.exceptionBreakpoints = { 'uncaught', 'caught' }
-        local root = vim.fs.root(0, {
-            'build.gradle',
-            'pom.xml',
-        })
-        local project_name = vim.fs.basename(root)
-        local test_class = vim.fn.expand('%:t:r')
-        final.mainClass = project_name .. '.' .. test_class
-        final.projectName = project_name
-        final.args = method_name and { '--tests', method_name } or (config.args or {})
-        final.classPaths = final.classPaths or {}
-        final.modulePaths = final.modulePaths or {}
-        final.request = 'launch'
-        final.type = 'java'
-        final.console = 'internalConsole'
-        final.stopOnEntry = false
+
+        if project_name and project_name ~= '' then
+            final.projectName = project_name
+        end
+
+        if method_name then
+            final.args = { '--tests', method_name }
+        end
         return final
     end
 end
@@ -799,9 +799,11 @@ M.run_test = function(options)
         debug
     )
 
-    local test_results_dir = vim.fs.joinpath(build_dir, 'target', 'surefire-reports')
+    local test_results_dir =
+        vim.fs.joinpath(build_dir, 'target', 'surefire-reports')
     if vim.fs.basename(wrapper) == 'gradlew' then
-        test_results_dir = vim.fs.joinpath(build_dir, 'build', 'test-results', 'test')
+        test_results_dir =
+            vim.fs.joinpath(build_dir, 'build', 'test-results', 'test')
     end
 
     local function find_latest_report()
@@ -843,10 +845,42 @@ M.run_test = function(options)
     local dap = nil
     local dap_attach_started = false
 
+    local function start_dap_attach()
+        if
+            not debug
+            or dap_attach_started
+            or not dap
+            or not dap.configurations
+            or not dap.configurations.java
+            or not dap.configurations.java[1]
+        then
+            return
+        end
+
+        dap_attach_started = true
+        update_notification('Starting debug session...')
+        vim.schedule(function()
+            local ok = pcall(dap.run, dap.configurations.java[1], {
+                before = create_dap_before_hook(method_name, project_name),
+            })
+            if not ok then
+                update_notification('Failed to start debug session', true)
+                close_notification(notification_id)
+            end
+        end)
+    end
+
     if debug then
         local dap_ok
         dap_ok, dap = pcall(require, 'dap')
-        local has_java_adapter = dap_ok and dap and dap.adapters and dap.adapters['java'] ~= nil
+        dapui_ok, dapui = pcall(require, 'dapui')
+        if dapui_ok then
+            dapui.open({ reset = true })
+        end
+        local has_java_adapter = dap_ok
+            and dap
+            and dap.adapters
+            and dap.adapters['java'] ~= nil
         local has_java_configuration = dap_ok
             and dap
             and dap.configurations
@@ -854,13 +888,16 @@ M.run_test = function(options)
             and dap.configurations.java[1] ~= nil
 
         if not has_java_adapter or not has_java_configuration then
-            update_notification('Debug unavailable: Java DAP not configured', true)
+            update_notification(
+                'Debug unavailable: Java DAP not configured',
+                true
+            )
             close_notification(notification_id)
             return
         end
     end
 
-    local function on_stdout(_, data)
+    local function handle_output(data)
         local output = table.concat(data or {}, '\n')
         if output ~= '' then
             if output_buffer == '' then
@@ -869,42 +906,28 @@ M.run_test = function(options)
                 output_buffer = output_buffer .. '\n' .. output
             end
         end
-        if is_test_environment_ready(output) then
-            if debug then
-                if not dap_attach_started and dap and dap.configurations and dap.configurations.java then
-                    dap_attach_started = true
-                    update_notification('Starting debug session...')
-                    vim.schedule(function()
-                        local ok = pcall(dap.run, dap.configurations.java[1], {
-                            before = create_dap_before_hook(method_name),
-                        })
-                        if not ok then
-                            update_notification('Failed to start debug session', true)
-                            close_notification(notification_id)
-                        end
-                    end)
-                end
-            else
-                update_notification('Running tests...')
+
+        if debug then
+            if is_debugger_listening(output_buffer) then
+                start_dap_attach()
             end
+        elseif is_test_environment_ready(output) then
+            update_notification('Running tests...')
         end
     end
 
+    local function on_stdout(_, data)
+        handle_output(data)
+    end
+
     local function on_stderr(_, data)
-        local output = table.concat(data or {}, '\n')
-        if output ~= '' then
-            if output_buffer == '' then
-                output_buffer = output
-            else
-                output_buffer = output_buffer .. '\n' .. output
-            end
-        end
+        handle_output(data)
     end
 
     update_notification('Starting test run...')
     local job_id = vim.fn.jobstart(cmd, {
-        stdout_buffered = true,
-        stderr_buffered = true,
+        stdout_buffered = not debug,
+        stderr_buffered = not debug,
         on_stdout = on_stdout,
         on_stderr = on_stderr,
         on_exit = on_exit,
@@ -937,9 +960,11 @@ M.load_existing_report = function(bufnr)
     local test_results_dir
 
     if vim.fs.basename(wrapper) == 'gradlew' then
-        test_results_dir = vim.fs.joinpath(build_dir, 'build', 'test-results', 'test')
+        test_results_dir =
+            vim.fs.joinpath(build_dir, 'build', 'test-results', 'test')
     else
-        test_results_dir = vim.fs.joinpath(build_dir, 'target', 'surefire-reports')
+        test_results_dir =
+            vim.fs.joinpath(build_dir, 'target', 'surefire-reports')
     end
 
     local reports = vim.fn.glob(
@@ -960,7 +985,8 @@ M.load_existing_report = function(bufnr)
 
     for _, report in ipairs(reports) do
         local report_class = vim.fn.fnamemodify(report, ':t:r'):sub(6) -- Remove 'TEST-' prefix
-        local report_simple_class = report_class:match('([^.]+)$') or report_class
+        local report_simple_class = report_class:match('([^.]+)$')
+            or report_class
         if report_simple_class == test_class or report_class == test_class then
             local report_time = vim.fn.getftime(report)
             if report_time > latest_time then
