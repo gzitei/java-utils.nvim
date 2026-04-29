@@ -82,6 +82,8 @@ require('java-utils').setup({
     auto_run_on_save    = false,              -- prompt after BufWritePost on test files
     show_notifications  = true,
     test_patterns       = { '*Test.java', '*IT.java' },
+    gradle_include_project_name = true,       -- use ':project:test' instead of plain 'test'
+    gradle_include_clean = true,              -- prepend 'clean' to Gradle test runs
 
     -- Nerd Font symbols
     symbols = {
@@ -124,6 +126,17 @@ require('java-utils').setup({
       failed  = '✗',
       skipped = '⊘',
     },
+  },
+})
+```
+
+### Gradle test command options
+
+```lua
+require('java-utils').setup({
+  test_runner = {
+    gradle_include_project_name = false, -- use `test`
+    gradle_include_clean = false,        -- skip `clean`
   },
 })
 ```
@@ -214,4 +227,3 @@ make test-file FILE=spec/java_utils_spec.lua  # run a single spec
 3. Add tests in `spec/`
 4. Run `make test` to verify
 5. Open a Pull Request
-

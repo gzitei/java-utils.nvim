@@ -677,13 +677,15 @@ end
 ---@param test_class string
 ---@param method_name? string
 ---@param debug boolean
+---@param test_runner_config JavaUtilsTestRunnerConfig
 ---@return string[]
 local function build_test_command(
     wrapper,
     project_name,
     test_class,
     method_name,
-    debug
+    debug,
+    test_runner_config
 )
     local wrapper_name = vim.fs.basename(wrapper)
     local cmd = { wrapper }
@@ -694,8 +696,16 @@ local function build_test_command(
             test_filter = string.format('%s.%s', test_class, method_name)
         end
 
-        table.insert(cmd, 'clean')
-        table.insert(cmd, string.format(':%s:test', project_name))
+        if test_runner_config.gradle_include_clean then
+            table.insert(cmd, 'clean')
+        end
+
+        if test_runner_config.gradle_include_project_name then
+            table.insert(cmd, string.format(':%s:test', project_name))
+        else
+            table.insert(cmd, 'test')
+        end
+
         if debug then
             table.insert(cmd, '--debug-jvm')
         end
@@ -769,6 +779,7 @@ M.run_test = function(options)
     local bufnr = options.bufnr
     local debug = options.debug
     local method_name = options.method_name
+    local cfg = config.get()
 
     local notification_id = notification('Preparing test run...')
     local function update_notification(msg, end_state)
@@ -796,7 +807,8 @@ M.run_test = function(options)
         project_name,
         test_class,
         method_name,
-        debug
+        debug,
+        cfg.test_runner
     )
 
     local test_results_dir =

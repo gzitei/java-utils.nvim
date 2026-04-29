@@ -50,6 +50,8 @@ describe("java-utils.config", function()
     assert.is_false(opts.test_runner.auto_run_on_save)
     assert.is_true(opts.test_runner.show_notifications)
     assert.same({ "*Test.java", "*IT.java" }, opts.test_runner.test_patterns)
+    assert.is_true(opts.test_runner.gradle_include_project_name)
+    assert.is_true(opts.test_runner.gradle_include_clean)
   end)
 
   it("merges user config with defaults", function()
@@ -62,6 +64,7 @@ describe("java-utils.config", function()
       },
       test_runner = {
         auto_run_on_save = true,
+        gradle_include_clean = false,
         symbols = { passed = "✓" },
       },
     })
@@ -72,6 +75,8 @@ describe("java-utils.config", function()
     assert.same({ "class", "interface" }, opts.file_creator.file_types)
     assert.is_true(opts.file_creator.package_completion) -- default preserved
     assert.is_true(opts.test_runner.auto_run_on_save)
+    assert.is_true(opts.test_runner.gradle_include_project_name)
+    assert.is_false(opts.test_runner.gradle_include_clean)
     assert.equals("✓", opts.test_runner.symbols.passed)
     assert.is_string(opts.test_runner.symbols.error)  -- default preserved (icon glyph)
   end)
@@ -189,6 +194,24 @@ describe("java-utils.test_runner", function()
     stubs.fnamemod   = stub(vim.fn,  "fnamemodify")
     stubs.getftime   = stub(vim.fn,  "getftime")
     stubs.jobstart   = stub(vim.fn,  "jobstart")
+
+    stubs.fs_dirname.invokes(function(path)
+      if path == nil then return "/test/project" end
+      return path:match("(.*)/") or path
+    end)
+
+    stubs.fs_find.invokes(function(names, _opts)
+      if type(names) == "table" then
+        for _, name in ipairs(names) do
+          if name == "gradlew" then return { "/test/project/gradlew" } end
+          if name == "mvnw" then return { "/test/project/mvnw" } end
+          if name == "pom.xml" then return { "/test/project/pom.xml" } end
+          if name == "build.gradle" then return { "/test/project/build.gradle" } end
+          if name == ".git" then return { "/test/project/.git" } end
+        end
+      end
+      return {}
+    end)
   end)
 
   after_each(function()
@@ -236,6 +259,109 @@ describe("java-utils.test_runner", function()
     assert.is_true(ok, "run_test should not raise: " .. tostring(err))
 
     lsp_stub:revert()
+  end)
+
+  it("run_test uses project-qualified Gradle task with clean by default", function()
+    package.loaded["java-utils.config"] = nil
+    package.loaded["java-utils.test_runner"] = nil
+    local config = require("java-utils.config")
+    config.setup()
+    local tr = require("java-utils.test_runner")
+
+    stubs.buf_name.returns("/test/project/src/test/java/TestClass.java")
+    stubs.fnamemod.returns("TestClass")
+
+    tr.run_test({ bufnr = 1, debug = false, method_name = "testMethod" })
+
+    assert.stub(stubs.jobstart).was_called_with({
+      "/test/project/gradlew",
+      "clean",
+      ":project:test",
+      "--continue",
+      "--tests",
+      "--rerun-tasks",
+      "TestClass.testMethod",
+    }, match.is_table())
+  end)
+
+  it("run_test can omit Gradle project-qualified task name", function()
+    package.loaded["java-utils.config"] = nil
+    package.loaded["java-utils.test_runner"] = nil
+    local config = require("java-utils.config")
+    config.setup({
+      test_runner = {
+        gradle_include_project_name = false,
+      },
+    })
+    local tr = require("java-utils.test_runner")
+
+    stubs.buf_name.returns("/test/project/src/test/java/TestClass.java")
+    stubs.fnamemod.returns("TestClass")
+
+    tr.run_test({ bufnr = 1, debug = false, method_name = "testMethod" })
+
+    assert.stub(stubs.jobstart).was_called_with({
+      "/test/project/gradlew",
+      "clean",
+      "test",
+      "--continue",
+      "--tests",
+      "--rerun-tasks",
+      "TestClass.testMethod",
+    }, match.is_table())
+  end)
+
+  it("run_test can omit Gradle clean", function()
+    package.loaded["java-utils.config"] = nil
+    package.loaded["java-utils.test_runner"] = nil
+    local config = require("java-utils.config")
+    config.setup({
+      test_runner = {
+        gradle_include_clean = false,
+      },
+    })
+    local tr = require("java-utils.test_runner")
+
+    stubs.buf_name.returns("/test/project/src/test/java/TestClass.java")
+    stubs.fnamemod.returns("TestClass")
+
+    tr.run_test({ bufnr = 1, debug = false, method_name = "testMethod" })
+
+    assert.stub(stubs.jobstart).was_called_with({
+      "/test/project/gradlew",
+      ":project:test",
+      "--continue",
+      "--tests",
+      "--rerun-tasks",
+      "TestClass.testMethod",
+    }, match.is_table())
+  end)
+
+  it("run_test can omit both Gradle clean and project-qualified task name", function()
+    package.loaded["java-utils.config"] = nil
+    package.loaded["java-utils.test_runner"] = nil
+    local config = require("java-utils.config")
+    config.setup({
+      test_runner = {
+        gradle_include_project_name = false,
+        gradle_include_clean = false,
+      },
+    })
+    local tr = require("java-utils.test_runner")
+
+    stubs.buf_name.returns("/test/project/src/test/java/TestClass.java")
+    stubs.fnamemod.returns("TestClass")
+
+    tr.run_test({ bufnr = 1, debug = false, method_name = "testMethod" })
+
+    assert.stub(stubs.jobstart).was_called_with({
+      "/test/project/gradlew",
+      "test",
+      "--continue",
+      "--tests",
+      "--rerun-tasks",
+      "TestClass.testMethod",
+    }, match.is_table())
   end)
 
   it("parse_xml_to_json returns structured result", function()

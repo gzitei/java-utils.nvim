@@ -91,6 +91,8 @@ keys fall back to the defaults shown below.
       auto_run_on_save   = false,
       show_notifications = true,
       test_patterns      = { '*Test.java', '*IT.java' },
+      gradle_include_project_name = true,
+      gradle_include_clean        = true,
 
       symbols = {
         passed  = ' ',
@@ -145,6 +147,20 @@ keys fall back to the defaults shown below.
   Type: `string[]`    Default: `{ '*Test.java', '*IT.java' }`
 
   Glob patterns used to identify test files for autocommands.
+
+                               *java-utils-config-gradle_include_project_name*
+`test_runner.gradle_include_project_name`
+  Type: `boolean`    Default: `true`
+
+  When true, Gradle test runs use the qualified task form `:projectname:test`.
+  When false, they use the plain `test` task.
+
+                                        *java-utils-config-gradle_include_clean*
+`test_runner.gradle_include_clean`
+  Type: `boolean`    Default: `true`
+
+  When true, Gradle test runs prepend the `clean` task.  When false, `clean`
+  is omitted.
 
 ==============================================================================
 5. COMMANDS                                              *java-utils-commands*

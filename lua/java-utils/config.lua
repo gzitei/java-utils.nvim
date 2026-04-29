@@ -15,6 +15,8 @@ local M = {}
 ---@field auto_run_on_save boolean
 ---@field show_notifications boolean
 ---@field test_patterns string[]
+---@field gradle_include_project_name boolean
+---@field gradle_include_clean boolean
 ---@field symbols table<string, string>
 ---@field highlight_groups table<string, table>
 
@@ -31,6 +33,8 @@ local defaults = {
         auto_run_on_save = false,
         show_notifications = true,
         test_patterns = { '*Test.java', '*IT.java' },
+        gradle_include_project_name = true,
+        gradle_include_clean = true,
         symbols = {
             passed = ' ',
             error = ' ',
