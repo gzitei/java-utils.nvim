@@ -5,11 +5,22 @@ local M = {}
 ---@field test_runner JavaUtilsTestRunnerConfig
 ---@field debug boolean
 
+---@class JavaUtilsSetupOptions
+---@field file_creator? JavaUtilsFileCreatorSetupOptions
+---@field test_runner? JavaUtilsTestRunnerSetupOptions
+---@field debug? boolean
+
 ---@class JavaUtilsFileCreatorConfig
 ---@field default_package? string|fun(): string|nil
 ---@field package_completion boolean
 ---@field use_current_file_package boolean
 ---@field file_types string[]
+
+---@class JavaUtilsFileCreatorSetupOptions
+---@field default_package? string|fun(): string|nil
+---@field package_completion? boolean
+---@field use_current_file_package? boolean
+---@field file_types? string[]
 
 ---@class JavaUtilsTestRunnerConfig
 ---@field auto_run_on_save boolean
@@ -19,6 +30,15 @@ local M = {}
 ---@field gradle_include_clean boolean
 ---@field symbols table<string, string>
 ---@field highlight_groups table<string, table>
+
+---@class JavaUtilsTestRunnerSetupOptions
+---@field auto_run_on_save? boolean
+---@field show_notifications? boolean
+---@field test_patterns? string[]
+---@field gradle_include_project_name? boolean
+---@field gradle_include_clean? boolean
+---@field symbols? table<string, string>
+---@field highlight_groups? table<string, table>
 
 ---@type JavaUtilsConfig
 local defaults = {
@@ -49,9 +69,10 @@ local defaults = {
     },
 }
 
-M.options = {}
+---@type JavaUtilsConfig
+M.options = vim.deepcopy(defaults)
 
----@param opts? JavaUtilsConfig
+---@param opts? JavaUtilsSetupOptions
 function M.setup(opts)
     M.options = vim.tbl_deep_extend('force', defaults, opts or {})
     

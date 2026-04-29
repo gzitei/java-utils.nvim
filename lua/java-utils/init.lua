@@ -1,5 +1,13 @@
 local M = {}
 
+---@class JavaUtilsModule
+---@field setup fun(opts?: JavaUtilsSetupOptions)
+---@field create_file fun(opts?: table): nil
+---@field get_test_methods fun(): string[]
+---@field run_test fun(opts: TestRunOptions): nil
+---@field list_java_tests fun()
+---@field get_config fun(): JavaUtilsConfig
+
 -- Module cache
 local modules = {}
 
@@ -15,6 +23,7 @@ end
 local setup_autocommands
 
 -- Setup function
+---@param opts? JavaUtilsSetupOptions
 function M.setup(opts)
     local config = require_module('config')
     config.setup(opts)
@@ -83,4 +92,5 @@ function M.get_config()
     return require_module('config').get()
 end
 
+---@type JavaUtilsModule
 return M
